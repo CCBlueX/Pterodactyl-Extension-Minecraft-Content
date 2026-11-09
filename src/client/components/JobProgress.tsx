@@ -1,5 +1,5 @@
 import type { ExtensionJobProgress } from '@pterodactyl/sdk';
-import { Button } from '@pterodactyl/sdk';
+import { Button, ProgressBar } from '@pterodactyl/sdk';
 
 export default function JobProgress({ progress, onCancel }: { progress: ExtensionJobProgress; onCancel?: () => void }) {
     const failed = progress.status === 'failed';
@@ -17,12 +17,7 @@ export default function JobProgress({ progress, onCancel }: { progress: Extensio
                     )}
                 </span>
             </div>
-            <div className='mcc:mt-2 mcc:h-1.5 mcc:overflow-hidden mcc:rounded-full mcc:bg-muted'>
-                <div
-                    className={`mcc:h-full mcc:rounded-full mcc:transition-[width] mcc:duration-500 ${failed ? 'mcc:bg-destructive' : 'mcc:bg-primary'}`}
-                    style={{ width: `${progress.percent}%` }}
-                />
-            </div>
+            <ProgressBar className='mcc:mt-2' value={progress.percent} tone={failed ? 'danger' : 'accent'} label={progress.message} />
         </div>
     );
 }

@@ -258,11 +258,28 @@ final class Panel
 
     public function backup(Server $server, string $name): ?Backup
     {
-        if ($server->backup_limit <= $server->backups()->count()) {
+        if ($this->backupSlots($server)['free'] === 0) {
             return null;
         }
 
         return $this->backups->initiate($server, $name);
+    }
+
+    /** @return array{limit: int, used: int, free: int} */
+    public function backupSlots(Server $server): array
+    {
+        $limit = (int) $server->backup_limit;
+        $used = $server->backups()->count();
+
+        return ['limit' => $limit, 'used' => $used, 'free' => max(0, $limit - $used)];
+    }
+
+    /** Null while the backup still runs or cannot be found. */
+    public function backupSucceeded(string $uuid): ?bool
+    {
+        $backup = Backup::query()->where('uuid', $uuid)->first();
+
+        return $backup?->completed_at === null ? null : (bool) $backup->is_successful;
     }
 
     private static function parent(string $path): string

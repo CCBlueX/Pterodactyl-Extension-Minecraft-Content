@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Dialog, Input, Label, Select, Switch, Table, TitledGreyBox, httpErrorToHuman, toast, useServerPermission } from '@pterodactyl/sdk';
+import { Alert, Badge, Button, Dialog, Input, Label, Select, Switch, Table, TitledGreyBox, httpErrorToHuman, toast, useServerPermission } from '@pterodactyl/sdk';
 import { activateWorld, createWorld, deleteWorld, getWorlds, importWorld, keys, resetDimension, searchWorlds, type World, type WorldImport, type WorldList } from '../api';
 import { useServerIds } from '../hooks';
 import { formatBytes, formatDate } from '../lib/format';
 import { MEDIUM, useMediaQuery } from '../lib/media';
-import Pill from '../components/Pill';
 import ProjectIcon from '../components/ProjectIcon';
 
 type Mode = 'create' | 'url' | 'file' | 'curseforge';
@@ -53,14 +52,14 @@ export default function WorldsTab({ busy }: { busy: boolean }) {
                     </Button.Text>
                 )}
                 {world.nether && (
-                    <Button.Text size='xsmall' disabled={running} onClick={() => setResetting({ world, dimension: 'nether' })}>
+                    <Button.Danger size='xsmall' disabled={running} onClick={() => setResetting({ world, dimension: 'nether' })}>
                         Reset Nether
-                    </Button.Text>
+                    </Button.Danger>
                 )}
                 {world.end && (
-                    <Button.Text size='xsmall' disabled={running} onClick={() => setResetting({ world, dimension: 'end' })}>
+                    <Button.Danger size='xsmall' disabled={running} onClick={() => setResetting({ world, dimension: 'end' })}>
                         Reset End
-                    </Button.Text>
+                    </Button.Danger>
                 )}
                 {!world.active && (
                     <Button.Danger size='xsmall' disabled={running} onClick={() => setRemoving(world)}>
@@ -139,7 +138,7 @@ function WorldName({ world }: { world: World }) {
     return (
         <span className='mcc:flex mcc:min-w-0 mcc:flex-wrap mcc:items-center mcc:gap-2'>
             <span className='mcc:min-w-0 mcc:break-words mcc:text-foreground'>{world.name}</span>
-            {world.active && <Pill tone='success'>{world.pending ? 'Generates on next start' : 'Loaded'}</Pill>}
+            {world.active && <Badge tone='success'>{world.pending ? 'Generates on next start' : 'Loaded'}</Badge>}
         </span>
     );
 }
@@ -149,8 +148,8 @@ function Dimensions({ world }: { world: World }) {
         <span>–</span>
     ) : (
         <span className='mcc:flex mcc:gap-1'>
-            <Pill tone={world.nether ? 'info' : 'muted'}>Nether</Pill>
-            <Pill tone={world.end ? 'info' : 'muted'}>End</Pill>
+            <Badge tone={world.nether ? 'info' : 'neutral'}>Nether</Badge>
+            <Badge tone={world.end ? 'info' : 'neutral'}>End</Badge>
         </span>
     );
 }

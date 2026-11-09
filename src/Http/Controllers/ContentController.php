@@ -13,9 +13,11 @@ use MinecraftContent\Content\Installed;
 use MinecraftContent\Plans\Plans;
 use MinecraftContent\Platform\Detector;
 use MinecraftContent\Platform\Platform;
+use MinecraftContent\Sources\Filters;
 use MinecraftContent\Sources\Sources;
 use Pterodactyl\Models\Server;
 use Pterodactyl\Services\Extensions\ExtensionSettingsRegistry;
+use RuntimeException;
 
 final class ContentController extends Controller
 {
@@ -87,15 +89,53 @@ final class ContentController extends Controller
             'query' => ['nullable', 'string', 'max:100'],
             'sort' => ['nullable', Rule::in(['relevance', 'downloads', 'updated', 'newest', 'follows'])],
             'page' => ['nullable', 'integer', 'min:1', 'max:500'],
+            'version' => ['nullable', 'string', 'regex:/^[\w.-]{1,32}$/'],
+            'loader' => ['nullable', Rule::in([Filters::ANY, ...array_keys(Platform::SOFTWARE)])],
+            'category' => ['nullable', 'string', 'regex:/^[\w.+-]{1,64}$/'],
         ]);
+        $platform = $this->detector->detect($server);
 
         return $this->attempt(fn (): array => $this->sources->get($data['source'])->search(
             $type,
-            $this->detector->detect($server),
+            $platform,
+            Filters::from($type, $platform, $data['version'] ?? null, $data['loader'] ?? null, $data['category'] ?? null),
             (string) ($data['query'] ?? ''),
             (string) ($data['sort'] ?? 'relevance'),
             (int) ($data['page'] ?? 1),
         ));
+    }
+
+    /** The filters a source offers for a type, preset to what the server runs. */
+    public function filters(Request $request, Server $server): JsonResponse
+    {
+        $this->authorize($request, $server, 'read');
+        $type = $this->type($request);
+        $data = $request->validate(['source' => ['required', Rule::in(['modrinth', 'hangar', 'spiget', 'curseforge', 'ftb'])]]);
+
+        $platform = $this->detector->detect($server);
+        $source = $this->sources->get($data['source']);
+        $defaults = Filters::defaults($type, $platform);
+        $ignored = $source->filters($type, $platform);
+        $loaders = Filters::loaderOptions($type, $platform);
+        $categories = [];
+
+        if ($ignored['category'] === null) {
+            try {
+                $categories = $source->categories($type);
+            } catch (RuntimeException $exception) {
+                $ignored['category'] = 'Categories could not be loaded. '.$exception->getMessage();
+            }
+        }
+
+        return new JsonResponse([
+            'version' => [
+                'default' => $defaults->version,
+                'options' => $ignored['version'] === null ? $this->gameVersions($platform) : [],
+                'ignored' => $ignored['version'],
+            ],
+            'loader' => $loaders === [] ? null : ['default' => $defaults->loader, 'options' => $loaders, 'ignored' => $ignored['loader']],
+            'category' => ['options' => $categories, 'ignored' => $ignored['category']],
+        ]);
     }
 
     public function details(Request $request, Server $server): JsonResponse
@@ -123,5 +163,21 @@ final class ContentController extends Controller
         return $this->attempt(fn (): array => [
             'versions' => $this->sources->get($data['source'])->versions($type, $this->detector->detect($server), $data['project']),
         ]);
+    }
+
+    /** @return list<string> Minecraft releases, with the server's own version even when it is a snapshot. */
+    private function gameVersions(Platform $platform): array
+    {
+        try {
+            $versions = $this->sources->modrinth->gameVersions();
+        } catch (RuntimeException) {
+            $versions = [];
+        }
+
+        if ($platform->minecraft !== null && ! in_array($platform->minecraft, $versions, true)) {
+            array_unshift($versions, $platform->minecraft);
+        }
+
+        return $versions;
     }
 }

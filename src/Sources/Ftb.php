@@ -25,7 +25,7 @@ final class Ftb implements Source
         return $type === ContentType::Modpack && $platform->kind() !== 'proxy';
     }
 
-    public function search(ContentType $type, Platform $platform, string $query, string $sort, int $page): array
+    public function search(ContentType $type, Platform $platform, Filters $filters, string $query, string $sort, int $page): array
     {
         $limit = max(1, $page) * 20;
         $result = mb_trim($query) === ''
@@ -37,6 +37,20 @@ final class Ftb implements Source
             'total' => (int) ($result['count'] ?? $result['total'] ?? count($result['packs'] ?? [])),
             'projects' => array_map(fn (int $id): array => $this->project((string) $id), $ids),
         ];
+    }
+
+    public function filters(ContentType $type, Platform $platform): array
+    {
+        return [
+            'version' => 'FTB cannot filter by Minecraft version.',
+            'loader' => 'FTB cannot filter by mod loader.',
+            'category' => 'FTB cannot filter by category.',
+        ];
+    }
+
+    public function categories(ContentType $type): array
+    {
+        return [];
     }
 
     public function versions(ContentType $type, Platform $platform, string $project): array

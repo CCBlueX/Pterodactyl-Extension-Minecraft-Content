@@ -16,33 +16,36 @@ type Tab = ContentType | 'worlds' | 'version';
 
 const TITLES: Record<Tab, string> = { plugin: 'Plugins', mod: 'Mods', datapack: 'Datapacks', resourcepack: 'Resource Pack', modpack: 'Modpacks', worlds: 'Worlds', version: 'Server Version' };
 
-export default function ContentScreen({ title }: { title: string }) {
+type Route = 'plugins' | 'mods';
+
+const ROUTE_TITLES: Record<Route, string> = { plugins: 'Plugins', mods: 'Mods' };
+
+export default function ContentScreen({ route }: { route: Route }) {
     const detection = useDetection();
     const job = useJob(detection.data?.job);
     const { identifier } = useServerIds();
     const { params } = usePanelLocation();
     const kind = detection.data?.platform.kind;
     const target = kind ? (kind === 'plugins' || kind === 'proxy' ? 'plugins' : 'mods') : null;
-    const current = title === 'Plugins' ? 'plugins' : 'mods';
     const id = params.id ?? identifier;
 
     useEffect(() => {
-        if (target && target !== current) {
+        if (target && target !== route) {
             // The panel's runtime gate can hide the old route before an SPA transition finishes.
             window.location.replace(`/server/${encodeURIComponent(id)}/${target}`);
         }
-    }, [target, current, id]);
+    }, [target, route, id]);
 
     if (detection.isError) {
         return <ServerError title='Could not read the server' message={httpErrorToHuman(detection.error)} onRetry={() => detection.refetch()} />;
     }
 
-    if (target && target !== current) {
+    if (target && target !== route) {
         return <Spinner centered />;
     }
 
     return (
-        <ServerContentBlock title={title}>
+        <ServerContentBlock title={ROUTE_TITLES[route]}>
             {detection.data ? <Content detection={detection.data} running={job.progress?.status === 'running' || (!!detection.data.job && !job.progress)} job={job} /> : <Spinner centered size={Spinner.Size.LARGE} />}
         </ServerContentBlock>
     );
@@ -72,9 +75,9 @@ function Content({ detection, running, job: { progress, notice, dismiss } }: { d
                     </p>
                 </div>
                 {canChange && (
-                    <button type='button' className='mcc:shrink-0 mcc:text-sm mcc:text-muted-foreground mcc:hover:text-foreground' onClick={() => setEditing(true)}>
+                    <Button.Text size='xsmall' className='mcc:shrink-0' onClick={() => setEditing(true)}>
                         Change
-                    </button>
+                    </Button.Text>
                 )}
             </div>
 

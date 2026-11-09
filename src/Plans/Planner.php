@@ -19,9 +19,6 @@ final readonly class Planner
     /** Folders a modpack brings that the previous pack's copies would conflict with. */
     private const array PACK_FOLDERS = ['mods', 'config', 'defaultconfigs', 'kubejs', 'scripts', 'libraries', '.fabric', '.quilt', 'versions', 'resourcepacks', 'shaderpacks'];
 
-    /** Files of the old server software that a new version would trip over. */
-    private const array SOFTWARE_FILES = ['libraries', 'versions', 'cache', '.fabric', '.quilt'];
-
     /** Server files a pack must not overwrite. */
     private const array KEEP = ['server.properties', 'eula.txt', 'ops.json', 'whitelist.json', 'banned-players.json', 'banned-ips.json', 'usercache.json'];
 
@@ -29,12 +26,17 @@ final readonly class Planner
 
     public function __construct(private Sources $sources) {}
 
-    /** @return list<array<string, mixed>> */
-    public function version(string $type, string $version, ?int $build, bool $clean, bool $start): array
+    /**
+     * The backup runs once the server is stopped, before any file changes.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function version(string $type, string $version, ?int $build, string $cleanup, bool $backup, bool $start): array
     {
         return array_values(array_filter([
             ['op' => 'stop'],
-            $clean ? ['op' => 'clear', 'paths' => [...self::SOFTWARE_FILES, 'server.jar']] : null,
+            $backup ? ['op' => 'backup', 'name' => "Before {$type} {$version}"] : null,
+            ['op' => 'cleanup', 'mode' => $cleanup],
             ['op' => 'loader', 'type' => $type, 'minecraft' => $version, 'build' => $build],
             ['op' => 'redetect'],
             $start ? ['op' => 'start'] : null,

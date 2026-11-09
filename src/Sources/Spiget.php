@@ -34,7 +34,7 @@ final class Spiget implements Source
         return $type === ContentType::Plugin && $platform->kind() === 'plugins' && $platform->software !== 'folia';
     }
 
-    public function search(ContentType $type, Platform $platform, string $query, string $sort, int $page): array
+    public function search(ContentType $type, Platform $platform, Filters $filters, string $query, string $sort, int $page): array
     {
         $parameters = ['size' => 20, 'page' => max(1, $page), 'sort' => self::SORTS[$sort] ?? '-downloads', 'fields' => self::FIELDS];
         $query = mb_trim($query);
@@ -49,6 +49,20 @@ final class Spiget implements Source
             'total' => ($page - 1) * 20 + count($result) + (count($result) === 20 ? 20 : 0),
             'projects' => array_values(array_map($this->project(...), $installable)),
         ];
+    }
+
+    public function filters(ContentType $type, Platform $platform): array
+    {
+        return [
+            'version' => 'SpigotMC cannot filter by Minecraft version.',
+            'loader' => 'SpigotMC cannot filter by server software.',
+            'category' => 'SpigotMC cannot combine categories with a search.',
+        ];
+    }
+
+    public function categories(ContentType $type): array
+    {
+        return [];
     }
 
     public function versions(ContentType $type, Platform $platform, string $project): array

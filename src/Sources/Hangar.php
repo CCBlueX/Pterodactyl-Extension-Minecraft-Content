@@ -17,6 +17,41 @@ final class Hangar implements Source
 
     private const array SORTS = ['relevance' => '-downloads', 'downloads' => '-downloads', 'updated' => '-updated', 'newest' => '-newest', 'follows' => '-stars'];
 
+    private const array CATEGORIES = [
+        'admin_tools' => 'Admin tools',
+        'chat' => 'Chat',
+        'dev_tools' => 'Developer tools',
+        'economy' => 'Economy',
+        'gameplay' => 'Gameplay',
+        'games' => 'Games',
+        'protection' => 'Protection',
+        'role_playing' => 'Role playing',
+        'world_management' => 'World management',
+        'misc' => 'Miscellaneous',
+    ];
+
+    /** @return array<string, mixed> */
+    public static function searchQuery(Platform $platform, Filters $filters, string $query, string $sort, int $page): array
+    {
+        $parameters = [
+            'q' => $query,
+            'limit' => 20,
+            'offset' => max(0, $page - 1) * 20,
+            'platform' => $platform->hangarPlatform(),
+            'sort' => self::SORTS[$sort] ?? '-downloads',
+        ];
+
+        if ($filters->version !== null && $platform->kind() !== 'proxy') {
+            $parameters['version'] = $filters->version;
+        }
+
+        if ($filters->category !== null && isset(self::CATEGORIES[$filters->category])) {
+            $parameters['category'] = $filters->category;
+        }
+
+        return array_filter($parameters, static fn (mixed $value): bool => $value !== '' && $value !== null);
+    }
+
     public function name(): string
     {
         return 'hangar';
@@ -27,26 +62,28 @@ final class Hangar implements Source
         return $type === ContentType::Plugin && $platform->hangarPlatform() !== null;
     }
 
-    public function search(ContentType $type, Platform $platform, string $query, string $sort, int $page): array
+    public function search(ContentType $type, Platform $platform, Filters $filters, string $query, string $sort, int $page): array
     {
-        $parameters = [
-            'q' => $query,
-            'limit' => 20,
-            'offset' => max(0, $page - 1) * 20,
-            'platform' => $platform->hangarPlatform(),
-            'sort' => self::SORTS[$sort] ?? '-downloads',
-        ];
-
-        if ($platform->minecraft !== null && $platform->kind() !== 'proxy') {
-            $parameters['version'] = $platform->minecraft;
-        }
-
-        $result = Api::get(self::API.'/projects', array_filter($parameters, static fn (mixed $value): bool => $value !== '' && $value !== null), ttl: 300);
+        $result = Api::get(self::API.'/projects', self::searchQuery($platform, $filters, $query, $sort, $page), ttl: 300);
 
         return [
             'total' => (int) ($result['pagination']['count'] ?? 0),
             'projects' => array_map($this->project(...), $result['result'] ?? []),
         ];
+    }
+
+    public function filters(ContentType $type, Platform $platform): array
+    {
+        return [
+            'version' => $platform->kind() === 'proxy' ? 'Hangar lists proxy plugins by proxy version, not Minecraft version.' : null,
+            'loader' => 'Hangar only lists plugins for this server\'s platform.',
+            'category' => null,
+        ];
+    }
+
+    public function categories(ContentType $type): array
+    {
+        return array_map(static fn (string $value, string $label): array => ['value' => $value, 'label' => $label], array_keys(self::CATEGORIES), self::CATEGORIES);
     }
 
     public function versions(ContentType $type, Platform $platform, string $project): array

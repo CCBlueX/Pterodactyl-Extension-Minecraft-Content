@@ -7,13 +7,18 @@ namespace MinecraftContent\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use MinecraftContent\Content\Installed;
+use MinecraftContent\Content\Worlds;
 use MinecraftContent\Panel\Panel;
 use MinecraftContent\Plans\Planner;
 use MinecraftContent\Plans\Plans;
 use MinecraftContent\Platform\Detector;
 use MinecraftContent\Sources\McJars;
+use MinecraftContent\Support\Cleanup;
+use MinecraftContent\Support\LevelDat;
+use MinecraftContent\Support\VersionOrder;
 use Pterodactyl\Facades\Activity;
 use Pterodactyl\Models\Server;
+use Throwable;
 
 final class SoftwareController extends Controller
 {
@@ -26,6 +31,7 @@ final class SoftwareController extends Controller
         private readonly Panel $panel,
         private readonly Detector $detector,
         private readonly Installed $installed,
+        private readonly Worlds $worlds,
     ) {}
 
     public function types(Request $request, Server $server): JsonResponse
@@ -54,7 +60,10 @@ final class SoftwareController extends Controller
         )]);
     }
 
-    /** The build installed through this extension and a newer stable build of the same version, if there is one. */
+    /**
+     * The build installed through this extension, a newer stable build of the same version if there is one,
+     * the free backup slots and the version the active world was last saved with.
+     */
     public function current(Request $request, Server $server): JsonResponse
     {
         $this->authorize($request, $server, 'read');
@@ -62,16 +71,17 @@ final class SoftwareController extends Controller
         return $this->attempt(function () use ($server): array {
             $installed = $this->installed->all($server)['software'];
             $platform = $this->detector->detect($server);
+            $update = null;
 
             // A jar swapped by hand makes the remembered build meaningless.
             if ($installed === null || mb_strtolower((string) $installed['type']) !== $platform->software || (string) $installed['version'] !== $platform->minecraft) {
-                return ['installed' => null, 'update' => null];
+                $installed = null;
+            } else {
+                $latest = collect($this->mcjars->builds((string) $installed['type'], (string) $installed['version']))->firstWhere('experimental', false);
+                $update = $latest !== null && $latest['id'] !== (int) $installed['build'] ? array_diff_key($latest, ['installation' => true]) : null;
             }
 
-            $latest = collect($this->mcjars->builds((string) $installed['type'], (string) $installed['version']))->firstWhere('experimental', false);
-            $update = $latest !== null && $latest['id'] !== (int) $installed['build'] ? array_diff_key($latest, ['installation' => true]) : null;
-
-            return ['installed' => $installed, 'update' => $update];
+            return ['installed' => $installed, 'update' => $update, 'backups' => $this->panel->backupSlots($server), 'world' => $this->world($server)];
         });
     }
 
@@ -83,12 +93,21 @@ final class SoftwareController extends Controller
             'type' => ['required', 'string', 'regex:'.self::TYPE],
             'version' => ['required', 'string', 'regex:'.self::VERSION],
             'build' => ['nullable', 'integer', 'min:1'],
-            'clean' => ['required', 'boolean'],
+            'cleanup' => ['required', 'string', 'in:'.implode(',', Cleanup::MODES)],
+            'backup' => ['required', 'boolean'],
+            'downgrade' => ['sometimes', 'boolean'],
         ]);
 
         return $this->attempt(function () use ($request, $server, $data): array {
             $build = $this->mcjars->build($data['type'], $data['version'], $data['build'] ?? null);
             abort_if($build === null, 422, 'That build does not exist.');
+
+            $world = $this->world($server);
+
+            if ($world !== null && $world['version'] !== null && ! ($data['downgrade'] ?? false)
+                && VersionOrder::isOlder(array_column($this->mcjars->versions('VANILLA'), 'id'), $data['version'], $world['version'])) {
+                abort(422, "The world \"{$world['name']}\" was last saved with Minecraft {$world['version']}. Tick \"I understand the world may break\" to install {$data['version']} anyway.");
+            }
 
             $running = ! in_array($this->panel->state($server), ['offline', 'stopped'], true);
             $label = ucfirst(mb_strtolower($data['type']))." {$data['version']} ({$build['name']})";
@@ -105,8 +124,22 @@ final class SoftwareController extends Controller
                 $request->user(),
                 'ext.minecraft-content.version',
                 "Installing {$label}",
-                $this->planner->version($data['type'], $data['version'], $build['id'], (bool) $data['clean'], $running),
+                $this->planner->version($data['type'], $data['version'], $build['id'], $data['cleanup'], (bool) $data['backup'], $running),
             )];
         });
+    }
+
+    /** @return array{name: string, version: string|null, data_version: int|null}|null */
+    private function world(Server $server): ?array
+    {
+        $name = $this->worlds->active($server);
+
+        try {
+            $level = LevelDat::read($this->panel->read($server, "{$name}/level.dat", 8 * 1024 * 1024) ?? '');
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $level === null ? null : ['name' => $name, ...$level];
     }
 }

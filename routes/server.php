@@ -13,6 +13,7 @@ Route::get('/detect', [ContentController::class, 'detect']);
 Route::put('/detect', [ContentController::class, 'override']);
 Route::delete('/job', [ContentController::class, 'cancel']);
 Route::get('/search', [ContentController::class, 'search']);
+Route::get('/filters', [ContentController::class, 'filters']);
 Route::get('/versions', [ContentController::class, 'versions']);
 Route::get('/details', [ContentController::class, 'details']);
 

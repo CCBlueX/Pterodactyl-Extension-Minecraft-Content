@@ -22,7 +22,17 @@ interface Source
     public function supports(ContentType $type, Platform $platform): bool;
 
     /** @return array{total: int, projects: list<array<string, mixed>>} */
-    public function search(ContentType $type, Platform $platform, string $query, string $sort, int $page): array;
+    public function search(ContentType $type, Platform $platform, Filters $filters, string $query, string $sort, int $page): array;
+
+    /**
+     * Why each filter is ignored for this type, or null where the source honours it.
+     *
+     * @return array{version: ?string, loader: ?string, category: ?string}
+     */
+    public function filters(ContentType $type, Platform $platform): array;
+
+    /** @return list<array{value: string, label: string}> */
+    public function categories(ContentType $type): array;
 
     /** @return list<array<string, mixed>> Newest first. */
     public function versions(ContentType $type, Platform $platform, string $project): array;

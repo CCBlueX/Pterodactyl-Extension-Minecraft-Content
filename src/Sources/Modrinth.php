@@ -14,6 +14,56 @@ final class Modrinth implements Source
 
     private const array SORTS = ['relevance' => 'relevance', 'downloads' => 'downloads', 'updated' => 'updated', 'newest' => 'newest', 'follows' => 'follows'];
 
+    /** @return array<string, mixed> */
+    public static function searchQuery(ContentType $type, Filters $filters, string $query, string $sort, int $page): array
+    {
+        $facets = [['project_type:'.$type->value]];
+        $loaders = $filters->loaders();
+
+        if ($loaders !== [] && in_array($type, [ContentType::Plugin, ContentType::Mod, ContentType::Modpack], true)) {
+            $facets[] = array_map(static fn (string $loader): string => "categories:{$loader}", $loaders);
+        }
+
+        if ($filters->version !== null) {
+            $facets[] = ["versions:{$filters->version}"];
+        }
+
+        if ($filters->category !== null) {
+            $facets[] = ["categories:{$filters->category}"];
+        }
+
+        if (in_array($type, [ContentType::Mod, ContentType::Modpack], true)) {
+            $facets[] = ['server_side:required', 'server_side:optional'];
+        }
+
+        return [
+            'query' => $query,
+            'facets' => json_encode($facets),
+            'index' => self::SORTS[$sort] ?? 'relevance',
+            'limit' => 20,
+            'offset' => max(0, $page - 1) * 20,
+        ];
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $tags
+     * @return list<array{value: string, label: string}>
+     */
+    public static function categoryOptions(array $tags, string $projectType): array
+    {
+        $options = [];
+
+        foreach ($tags as $tag) {
+            if (is_array($tag) && ($tag['project_type'] ?? null) === $projectType && is_string($tag['name'] ?? null)) {
+                $options[$tag['name']] = ['value' => $tag['name'], 'label' => ucfirst(str_replace('-', ' ', $tag['name']))];
+            }
+        }
+
+        usort($options, static fn (array $a, array $b): int => strnatcasecmp($a['label'], $b['label']));
+
+        return $options;
+    }
+
     public function name(): string
     {
         return 'modrinth';
@@ -24,30 +74,9 @@ final class Modrinth implements Source
         return $platform->supports($type);
     }
 
-    public function search(ContentType $type, Platform $platform, string $query, string $sort, int $page): array
+    public function search(ContentType $type, Platform $platform, Filters $filters, string $query, string $sort, int $page): array
     {
-        $facets = [['project_type:'.$type->value]];
-        $loaders = $this->loaders($type, $platform);
-
-        if ($loaders !== [] && in_array($type, [ContentType::Plugin, ContentType::Mod], true)) {
-            $facets[] = array_map(static fn (string $loader): string => "categories:{$loader}", $loaders);
-        }
-
-        if ($platform->minecraft !== null && $type !== ContentType::Modpack) {
-            $facets[] = ["versions:{$platform->minecraft}"];
-        }
-
-        if (in_array($type, [ContentType::Mod, ContentType::Modpack], true)) {
-            $facets[] = ['server_side:required', 'server_side:optional'];
-        }
-
-        $result = Api::get(self::API.'/search', [
-            'query' => $query,
-            'facets' => json_encode($facets),
-            'index' => self::SORTS[$sort] ?? 'relevance',
-            'limit' => 20,
-            'offset' => max(0, $page - 1) * 20,
-        ], ttl: 300);
+        $result = Api::get(self::API.'/search', self::searchQuery($type, $filters, $query, $sort, $page), ttl: 300);
 
         return [
             'total' => (int) ($result['total_hits'] ?? 0),
@@ -64,6 +93,31 @@ final class Modrinth implements Source
                 'url' => "https://modrinth.com/{$type->value}/".($hit['slug'] ?? $hit['project_id']),
             ], $result['hits'] ?? []),
         ];
+    }
+
+    public function filters(ContentType $type, Platform $platform): array
+    {
+        return ['version' => null, 'loader' => null, 'category' => null];
+    }
+
+    public function categories(ContentType $type): array
+    {
+        $projectType = match ($type) {
+            ContentType::ResourcePack => 'resourcepack',
+            ContentType::Modpack => 'modpack',
+            default => 'mod',
+        };
+
+        return self::categoryOptions(Api::get(self::API.'/tag/category', ttl: 86400), $projectType);
+    }
+
+    /** @return list<string> Minecraft releases, newest first. */
+    public function gameVersions(): array
+    {
+        return array_values(array_map(
+            static fn (array $version): string => (string) $version['version'],
+            array_filter(Api::get(self::API.'/tag/game_version', ttl: 86400), static fn (mixed $version): bool => is_array($version) && ($version['version_type'] ?? '') === 'release'),
+        ));
     }
 
     public function details(string $project): array

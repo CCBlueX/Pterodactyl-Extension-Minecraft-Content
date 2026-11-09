@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Dialog, Switch, Table, Tooltip, httpErrorToHuman, toast, useServerPermission } from '@pterodactyl/sdk';
+import { Badge, Button, Dialog, Switch, Table, Tooltip, httpErrorToHuman, toast, useServerPermission } from '@pterodactyl/sdk';
 import { getInstalled, getUpdates, keys, remove, scan, toggle, update, type ContentType, type InstalledFile, type Version } from '../api';
 import { useServerIds } from '../hooks';
 import { SOURCE_NAMES, formatBytes } from '../lib/format';
 import { MEDIUM, useMediaQuery } from '../lib/media';
-import Pill from '../components/Pill';
 import ProjectIcon from '../components/ProjectIcon';
 
 export default function InstalledList({ type }: { type: ContentType }) {
@@ -173,8 +172,8 @@ function FileVersion({ file, update }: { file: InstalledFile; update?: Version }
     return (
         <div className='mcc:flex mcc:flex-wrap mcc:items-center mcc:gap-1'>
             <span className='mcc:min-w-0 mcc:break-words'>{file.version_name ?? formatBytes(file.size)}</span>
-            {file.source ? <Pill>{SOURCE_NAMES[file.source]}</Pill> : <Pill tone='warning'>Unknown</Pill>}
-            {update && <Pill tone='info'>{update.number || update.name} available</Pill>}
+            {file.source ? <Badge tone='neutral'>{SOURCE_NAMES[file.source]}</Badge> : <Badge tone='warning'>Unknown</Badge>}
+            {update && <Badge tone='info'>{update.number || update.name} available</Badge>}
         </div>
     );
 }

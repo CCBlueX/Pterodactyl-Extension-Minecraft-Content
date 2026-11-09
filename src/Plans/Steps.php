@@ -11,10 +11,10 @@ use MinecraftContent\Platform\Detector;
 use MinecraftContent\Sources\Api;
 use MinecraftContent\Sources\McJars;
 use MinecraftContent\Sources\Sources;
+use MinecraftContent\Support\Cleanup;
 use MinecraftContent\Support\Properties;
 use MinecraftContent\Support\Urls;
 use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
-use Pterodactyl\Models\Backup;
 use Pterodactyl\Models\Server;
 use RuntimeException;
 use Throwable;
@@ -35,6 +35,7 @@ final readonly class Steps
     private const array EGGS = [
         'VANILLA' => ['Vanilla Minecraft', 'Vanilla'],
         'PAPER' => ['Paper'],
+        'SPIGOT' => ['Spigot'],
         'PURPUR' => ['Purpur'],
         'FOLIA' => ['Folia'],
         'FABRIC' => ['Fabric'],
@@ -70,7 +71,7 @@ final readonly class Steps
             'stop' => 'Stopped the server.',
             'start' => 'Started the server.',
             'backup' => 'Created a backup.',
-            'clear' => 'Removed old files.',
+            'clear', 'cleanup' => 'Removed old files.',
             'pull' => 'Downloaded '.basename((string) $step['filename']).'.',
             'decompress' => 'Unpacked '.basename((string) $step['file']).'.',
             'move', 'unwrap' => 'Copied files into place.',
@@ -106,6 +107,7 @@ final readonly class Steps
             'start' => $this->start($server),
             'backup' => $this->backup($server, $step, $plan),
             'clear' => $this->clear($server, $step),
+            'cleanup' => $this->cleanup($server, $step),
             'mkdir' => $this->mkdir($server, $step),
             'pull' => $this->pull($server, $step, $plan),
             'decompress' => $this->decompress($server, $step),
@@ -177,7 +179,7 @@ final readonly class Steps
             $backup = $this->panel->backup($server, (string) $step['name']);
 
             if ($backup === null) {
-                $plan['warnings'][] = 'No backup was made because the backup limit is reached.';
+                $plan['warnings'][] = 'No backup was made because every backup slot is in use.';
 
                 return StepResult::done();
             }
@@ -185,10 +187,10 @@ final readonly class Steps
             return StepResult::wait(5, ['uuid' => $backup->uuid, 'deadline' => time() + 3600] + $step);
         }
 
-        $backup = Backup::query()->where('uuid', $step['uuid'])->first();
+        $successful = $this->panel->backupSucceeded((string) $step['uuid']);
 
-        if ($backup?->completed_at !== null) {
-            return $backup->is_successful ? StepResult::done() : throw new RuntimeException('The backup failed, so nothing was changed.');
+        if ($successful !== null) {
+            return $successful ? StepResult::done() : throw new RuntimeException('The backup failed, so nothing was changed.');
         }
 
         if (time() > $step['deadline']) {
@@ -214,6 +216,34 @@ final readonly class Steps
         }
 
         return StepResult::done();
+    }
+
+    /**
+     * Full clean-up lists the root when it runs, so files the server wrote while stopping go too.
+     *
+     * @param  array<string, mixed>  $step
+     */
+    private function cleanup(Server $server, array $step): StepResult
+    {
+        $mode = (string) $step['mode'];
+
+        if ($mode !== 'full') {
+            return StepResult::then([['op' => 'clear', 'paths' => Cleanup::paths($mode)]]);
+        }
+
+        $root = $this->panel->list($server, '/', fresh: true);
+        $active = mb_trim(Properties::parse($this->panel->read($server, 'server.properties', 256 * 1024) ?? '')['level-name'] ?? '', " \t/") ?: 'world';
+        $worlds = [$active];
+
+        foreach ($root as $entry) {
+            if (! $entry['file'] && $entry['name'] !== $active && $this->panel->exists($server, "{$entry['name']}/level.dat")) {
+                $worlds[] = $entry['name'];
+            }
+        }
+
+        $paths = Cleanup::paths('full', array_column($root, 'name'), $worlds);
+
+        return StepResult::then(array_map(static fn (array $chunk): array => ['op' => 'clear', 'paths' => $chunk], array_chunk($paths, 300)));
     }
 
     /** @param array<string, mixed> $step */

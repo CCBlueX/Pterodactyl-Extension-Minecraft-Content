@@ -31,6 +31,53 @@ final readonly class CurseForge implements Source
 
     public function __construct(private ExtensionSettingsRegistry $settings) {}
 
+    /** @return array<string, mixed> */
+    public static function searchQuery(ContentType $type, Filters $filters, string $query, string $sort, int $page): array
+    {
+        $parameters = [
+            'gameId' => self::MINECRAFT,
+            'classId' => self::CLASSES[$type->value],
+            'searchFilter' => $query,
+            'sortField' => self::SORTS[$sort] ?? 2,
+            'sortOrder' => 'desc',
+            'pageSize' => 20,
+            'index' => max(0, $page - 1) * 20,
+        ];
+
+        if ($filters->version !== null) {
+            $parameters['gameVersion'] = $filters->version;
+        }
+
+        if (in_array($type, [ContentType::Mod, ContentType::Modpack], true) && isset(self::LOADERS[$filters->loader ?? ''])) {
+            $parameters['modLoaderType'] = self::LOADERS[$filters->loader];
+        }
+
+        if ($filters->category !== null && ctype_digit($filters->category)) {
+            $parameters['categoryId'] = (int) $filters->category;
+        }
+
+        return array_filter($parameters, static fn (mixed $value): bool => $value !== '');
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $categories
+     * @return list<array{value: string, label: string}>
+     */
+    public static function categoryOptions(array $categories): array
+    {
+        $options = [];
+
+        foreach ($categories as $category) {
+            if (is_array($category) && isset($category['id'], $category['name']) && ! ($category['isClass'] ?? false)) {
+                $options[] = ['value' => (string) $category['id'], 'label' => (string) $category['name']];
+            }
+        }
+
+        usort($options, static fn (array $a, array $b): int => strnatcasecmp($a['label'], $b['label']));
+
+        return $options;
+    }
+
     public function name(): string
     {
         return 'curseforge';
@@ -46,32 +93,28 @@ final readonly class CurseForge implements Source
         return $this->enabled() && $platform->supports($type) && ($type !== ContentType::Plugin || $platform->kind() === 'plugins');
     }
 
-    public function search(ContentType $type, Platform $platform, string $query, string $sort, int $page): array
+    public function search(ContentType $type, Platform $platform, Filters $filters, string $query, string $sort, int $page): array
     {
-        $parameters = [
-            'gameId' => self::MINECRAFT,
-            'classId' => self::CLASSES[$type->value],
-            'searchFilter' => $query,
-            'sortField' => self::SORTS[$sort] ?? 2,
-            'sortOrder' => 'desc',
-            'pageSize' => 20,
-            'index' => max(0, $page - 1) * 20,
-        ];
-
-        if ($platform->minecraft !== null && $type !== ContentType::Modpack) {
-            $parameters['gameVersion'] = $platform->minecraft;
-        }
-
-        if (($loader = $this->loader($type, $platform)) !== null) {
-            $parameters['modLoaderType'] = $loader;
-        }
-
-        $result = $this->get('/mods/search', array_filter($parameters, static fn (mixed $value): bool => $value !== ''));
+        $result = $this->get('/mods/search', self::searchQuery($type, $filters, $query, $sort, $page));
 
         return [
             'total' => min(10000, (int) ($result['pagination']['totalCount'] ?? 0)),
             'projects' => array_map($this->normalizeProject(...), $result['data'] ?? []),
         ];
+    }
+
+    public function filters(ContentType $type, Platform $platform): array
+    {
+        return [
+            'version' => null,
+            'loader' => $type === ContentType::Plugin ? 'CurseForge does not tag plugins by server software.' : null,
+            'category' => null,
+        ];
+    }
+
+    public function categories(ContentType $type): array
+    {
+        return self::categoryOptions($this->get('/categories', ['gameId' => self::MINECRAFT, 'classId' => self::CLASSES[$type->value]])['data'] ?? []);
     }
 
     public function versions(ContentType $type, Platform $platform, string $project): array

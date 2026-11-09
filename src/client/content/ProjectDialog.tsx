@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Dialog, Spinner, httpErrorToHuman } from '@pterodactyl/sdk';
+import { Badge, Dialog, Spinner, httpErrorToHuman } from '@pterodactyl/sdk';
 import { getDetails, keys, type Project } from '../api';
 import { useServerIds } from '../hooks';
 import { FOLLOWERS, SOURCE_NAMES, formatDate, formatDownloads } from '../lib/format';
-import Pill from '../components/Pill';
 import ProjectIcon from '../components/ProjectIcon';
 
 /** A project's description, stats and links without leaving the panel. Descriptions arrive as plain text. */
@@ -47,9 +46,9 @@ export default function ProjectDialog({ project, onClose, actions }: { project: 
                             {data.categories.length > 0 && (
                                 <div className='mcc:flex mcc:flex-wrap mcc:gap-1'>
                                     {data.categories.map((category) => (
-                                        <Pill key={category} tone='muted'>
+                                        <Badge key={category} tone='neutral'>
                                             {category}
-                                        </Pill>
+                                        </Badge>
                                     ))}
                                 </div>
                             )}

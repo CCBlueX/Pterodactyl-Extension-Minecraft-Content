@@ -40,7 +40,7 @@ afterEach(() => {
 
 function renderScreen(permissions: string[]) {
     host = createExtensionTestHost({ extensionId: 'minecraft-content', prefix: 'mcc', server: createTestServer({ owner: false, permissions, eggFeatures: ['eula'] }) });
-    render(<ContentScreen title='Plugins' />, { wrapper: host.Wrapper });
+    render(<ContentScreen route='plugins' />, { wrapper: host.Wrapper });
 }
 
 test('shows the tabs the server supports and marks installed projects', async () => {

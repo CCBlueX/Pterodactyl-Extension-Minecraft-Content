@@ -115,14 +115,29 @@ export interface SoftwareBuild {
     changes: string[];
 }
 
+/** Browse filters a user changed; a missing one keeps what the server runs, "any" drops it. */
+export interface SearchFilters {
+    version?: string;
+    loader?: string;
+    category?: string;
+}
+
+/** `ignored` says why the source cannot apply a filter; `default` null means any. */
+export interface FilterOptions {
+    version: { default: string | null; options: string[]; ignored: string | null };
+    loader: { default: string | null; options: string[]; ignored: string | null } | null;
+    category: { options: { value: string; label: string }[]; ignored: string | null };
+}
+
 const base = (server: string) => `/api/client/servers/${server}/extensions/minecraft-content`;
 
 export const keys = {
     detect: (server: string) => ['minecraft-content', server, 'detect'] as const,
     worlds: (server: string) => ['minecraft-content', server, 'worlds'] as const,
     worldSearch: (server: string, query: string) => ['minecraft-content', server, 'world-search', query] as const,
-    search: (server: string, type: ContentType, source: string, query: string, sort: Sort, page: number) =>
-        ['minecraft-content', server, 'search', type, source, query, sort, page] as const,
+    search: (server: string, type: ContentType, source: string, query: string, sort: Sort, page: number, filters: SearchFilters) =>
+        ['minecraft-content', server, 'search', type, source, query, sort, page, filters] as const,
+    filters: (server: string, type: ContentType, source: string) => ['minecraft-content', server, 'filters', type, source] as const,
     versions: (server: string, type: ContentType, source: string, project: string) =>
         ['minecraft-content', server, 'versions', type, source, project] as const,
     details: (server: string, source: string, project: string) => ['minecraft-content', server, 'details', source, project] as const,
@@ -138,8 +153,10 @@ export const getDetection = (server: string) => get<Detection>(`${base(server)}/
 export const setPlatform = async (server: string, software: string | null, minecraft: string | null) =>
     (await http.put<Detection>(`${base(server)}/detect`, { software, minecraft })).data;
 
-export const search = (server: string, type: ContentType, source: string, query: string, sort: Sort, page: number) =>
-    get<{ total: number; projects: Project[] }>(`${base(server)}/search`, { type, source, query, sort, page });
+export const search = (server: string, type: ContentType, source: string, query: string, sort: Sort, page: number, filters: SearchFilters = {}) =>
+    get<{ total: number; projects: Project[] }>(`${base(server)}/search`, { type, source, query, sort, page, ...filters });
+
+export const getFilters = (server: string, type: ContentType, source: string) => get<FilterOptions>(`${base(server)}/filters`, { type, source });
 
 export const getDetails = (server: string, source: string, project: string) => get<ProjectDetails>(`${base(server)}/details`, { source, project });
 
@@ -183,11 +200,32 @@ export interface InstalledSoftware {
     installed_at: string;
 }
 
-export const getCurrentSoftware = (server: string) =>
-    get<{ installed: InstalledSoftware | null; update: SoftwareBuild | null }>(`${base(server)}/software-current`);
+export interface BackupSlots {
+    limit: number;
+    used: number;
+    free: number;
+}
 
-export const changeSoftware = async (server: string, input: { type: string; version: string; build: number | null; clean: boolean }) =>
-    (await http.post<{ job: string }>(`${base(server)}/software`, input)).data;
+/** The version the active world was last saved with, read from its level.dat. */
+export interface WorldVersion {
+    name: string;
+    version: string | null;
+    data_version: number | null;
+}
+
+export interface CurrentSoftware {
+    installed: InstalledSoftware | null;
+    update: SoftwareBuild | null;
+    backups: BackupSlots;
+    world: WorldVersion | null;
+}
+
+export const getCurrentSoftware = (server: string) => get<CurrentSoftware>(`${base(server)}/software-current`);
+
+export const changeSoftware = async (
+    server: string,
+    input: { type: string; version: string; build: number | null; cleanup: Cleanup; backup: boolean; downgrade?: boolean }
+) => (await http.post<{ job: string }>(`${base(server)}/software`, input)).data;
 
 export const installModpack = async (
     server: string,
